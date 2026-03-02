@@ -1,0 +1,53 @@
+{
+  "name": "oceanbase-coding-agent",
+  "displayName": "OceanBase Coding Agent",
+  "description": "Minimal IDE bridge for local coding agent API",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "activationEvents": [
+    "onCommand:codingAgent.ask"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codingAgent.ask",
+        "title": "Coding Agent: Ask"
+      }
+    ],
+    "configuration": {
+      "title": "Coding Agent",
+      "properties": {
+        "codingAgent.baseUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8080/api/v1",
+          "description": "Coding Agent API base URL"
+        },
+        "codingAgent.influencerName": {
+          "type": "string",
+          "default": "local_developer",
+          "description": "Session bootstrap influencer_name"
+        },
+        "codingAgent.category": {
+          "type": "string",
+          "default": "engineering",
+          "description": "Session bootstrap category"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.6.2"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}

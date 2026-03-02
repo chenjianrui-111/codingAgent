@@ -1,0 +1,16 @@
+.DS_Store
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+backend/.env
+backend/.venv/
+backend/coding_agent_dev.db
+extension/node_modules/
+extension/out/
+coding_agent_dev.db
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+.deepagent/
+*.tsbuildinfo

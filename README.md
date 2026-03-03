@@ -1,6 +1,10 @@
-# Coding Agent — 企业级 AI 自主编程平台
+# Coding Agent — AI 自主编程平台
 
 一个自主式 AI 编程 Agent 平台，集成 DeepAgent 多角色编排引擎、多层 RAG 知识检索、项目级知识图谱、Streaming Tool-Use 实时工具调用、多租户认证体系，以及完整的全栈 Web UI。专为真实软件工程工作流设计。
+
+##项目效果
+<img width="1520" height="1025" alt="image" src="https://github.com/user-attachments/assets/d60d2400-088d-4a46-a98f-ce01aa00b6e4" />
+
 
 ## 架构总览
 

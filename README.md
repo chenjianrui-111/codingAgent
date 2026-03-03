@@ -1,161 +1,160 @@
-# Coding Agent — Enterprise-Grade AI Coding Platform
+# Coding Agent — 企业级 AI 自主编程平台
 
-An autonomous AI coding agent platform with DeepAgent orchestration, multi-layer RAG retrieval, project-level knowledge graph, streaming tool-use, and a full-stack Web UI. Built for real-world software engineering workflows.
+一个自主式 AI 编程 Agent 平台，集成 DeepAgent 多角色编排引擎、多层 RAG 知识检索、项目级知识图谱、Streaming Tool-Use 实时工具调用、多租户认证体系，以及完整的全栈 Web UI。专为真实软件工程工作流设计。
 
-## Architecture Overview
+## 架构总览
 
 ```
                          +------------------+
-                         |   Web Frontend   |  React + SSE Streaming
-                         |  (Chat / Diff /  |
-                         |   Tool Cards)    |
+                         |   Web 前端        |  React + SSE Streaming
+                         |  (对话 / Diff /   |
+                         |   工具卡片)        |
                          +--------+---------+
                                   |
                          +--------v---------+
-                         |   FastAPI Server  |  REST + SSE + WebSocket
+                         |   FastAPI 服务端   |  REST + SSE + WebSocket
                          |   /api/v1/*       |
                          +--------+---------+
                                   |
               +-------------------+-------------------+
               |                   |                   |
      +--------v------+  +--------v--------+  +-------v--------+
-     | Agent Runner   |  | Agent           |  | Tool System    |
-     | (LLM Streaming |  | Orchestrator    |  | File / Shell / |
-     |  Tool-Use Loop)|  | (DeepAgent Loop)|  | Git / RAG      |
+     | Agent Runner   |  | DeepAgent       |  | Tool System    |
+     | (LLM Streaming |  | 多角色编排引擎    |  | 文件 / Shell / |
+     |  Tool-Use 循环) |  | (规划-编码-测试)  |  | Git / RAG      |
      +--------+------+  +--------+--------+  +-------+--------+
               |                   |                   |
      +--------v-------------------v-------------------v--------+
-     |                    Service Layer                         |
-     |  LLM Service | Memory Manager | RAG Service | Sandbox   |
-     |  Context Indexer | Project Context | Multimodal | Test   |
+     |                    服务层 (Service Layer)                  |
+     |  LLM 服务 | 记忆管理 | RAG 服务 | 沙箱隔离                  |
+     |  上下文索引 | 项目知识图谱 | 多模态处理 | 测试执行             |
      +----------------------------+----------------------------+
                                   |
               +-------------------+-------------------+
               |                                       |
      +--------v--------+                    +---------v-------+
-     | OceanBase / MySQL|                    | File System     |
-     | (20+ tables)     |                    | Artifacts +     |
-     | SQLite fallback   |                    | Sandbox         |
+     | OceanBase / MySQL|                    | 文件系统         |
+     | (20+ 张数据表)    |                    | 产物存储 +       |
+     | SQLite 降级兜底   |                    | 沙箱工作区       |
      +------------------+                    +-----------------+
 ```
 
 ---
 
-## Module Highlights
+## 核心功能模块
 
-### 1. DeepAgent Orchestration Engine
+### 1. DeepAgent 多角色编排引擎
 
-> `backend/app/services/agent_service.py` — 655 lines
+> `backend/app/services/agent_service.py` — 655+ 行
 
-Production-grade agentic loop with planning, execution, evaluation, and self-healing capabilities.
+生产级 Agentic Loop，具备规划、执行、评估、自愈能力。
 
-**Multi-Role Worker Pipeline**
+**多角色工作流水线**
 
-| Role | Responsibility |
-|------|---------------|
-| **PlannerAgent** | Decompose user requirement into a dependency-aware todo DAG |
-| **CoderAgent** | Generate code changes with RAG-injected project context |
-| **TesterAgent** | Execute test suite, validate exit_code = 0 |
-| **ReviewerAgent** | Risk assessment, delivery notes, final quality gate |
+| 角色 | 职责 |
+|------|------|
+| **PlannerAgent** | 将用户需求拆解为带依赖关系的 Todo DAG |
+| **CoderAgent** | 结合 RAG 注入的项目上下文生成代码变更 |
+| **TesterAgent** | 执行测试套件，校验 exit_code = 0 |
+| **ReviewerAgent** | 风险评估、交付说明、最终质量把关 |
 
-**Intelligent Execution Loop**
+**智能执行循环**
 
 ```
-User Query
-  -> Persona Interpreter (normalize, cap at 4000 chars)
-  -> Complexity Assessment (simple/complex, heuristic keyword detection)
-  -> Planning Tool (build todo DAG with inter-task dependencies)
-  -> Execution Loop (max 16 steps):
-       Pick next ready todo (all deps completed)
-       -> Risk Check: risky keywords detected?
-            Yes -> Create ApprovalEvent, pause for human decision
-            No  -> Execute worker agent
-       -> Evaluate result (rule-based: exit_code, output length, keywords)
-       -> Failed & retries remaining?
-            Yes -> Reflector injects failure context, re-attempt
-            No  -> Mark failed, continue to next
-       -> Test failure? -> Auto-inject remediation loop (coder -> tester)
-  -> Aggregate artifacts + summary
+用户输入
+  -> Persona 解释器（标准化处理，限制 4000 字符）
+  -> 复杂度评估（simple/complex，启发式关键词检测）
+  -> 规划工具（构建带任务间依赖的 Todo DAG）
+  -> 执行循环（最多 16 步）：
+       选取下一个就绪 Todo（所有依赖已完成）
+       -> 风险检查：检测到危险关键词？
+            是 -> 创建 ApprovalEvent，暂停等待人工决策
+            否 -> 执行对应角色的 Worker Agent
+       -> 评估结果（基于规则：exit_code、输出长度、关键词）
+       -> 失败且有剩余重试次数？
+            是 -> ReflectorAgent 注入失败上下文，重新尝试
+            否 -> 标记失败，继续下一个
+       -> 测试失败？ -> 自动注入修复循环（Coder -> Tester）
+  -> 聚合产物 + 生成摘要
 ```
 
-**Self-Healing & Retry**
-- Configurable retry budget per todo (default: 2 attempts)
-- `ReflectorAgent` analyzes failure reason and injects corrective instructions
-- Test failures trigger automatic coder-tester remediation cycles
-- All intermediate outputs persisted as artifacts at `.deepagent/runs/{run_id}/`
+**自愈与重试机制**
+- 每个 Todo 可配置重试预算（默认 2 次）
+- `ReflectorAgent` 分析失败原因并注入纠正指令
+- 测试失败自动触发 Coder-Tester 修复循环
+- 所有中间产物持久化到 `.deepagent/runs/{run_id}/`
 
-**Human Approval Gates**
-- Pre-execution keyword scanning for dangerous operations (`DROP TABLE`, `rm -rf`, `ALTER TABLE`, `migration`, etc.)
-- Blocks execution, creates `ApprovalEvent` record, awaits human decision
-- Approval/rejection tracked with operator identity and comment for audit trail
+**人工审批门控**
+- 执行前扫描危险关键词（`DROP TABLE`、`rm -rf`、`ALTER TABLE`、`migration` 等）
+- 阻断执行，创建 `ApprovalEvent` 记录，等待人工决策
+- 审批/拒绝操作追踪操作者身份和备注，用于审计
 
 ---
 
-### 2. LLM-Driven Agent Runner (Streaming Tool-Use)
+### 2. LLM Streaming Tool-Use Agent Runner
 
 > `backend/app/services/agent_runner.py` + `backend/app/services/llm_service.py`
 
-Real-time Claude API integration with streaming tool-use for autonomous coding.
+实时 LLM API 集成，支持 Streaming Tool-Use 的自主编码 Agent。
 
-**Streaming Architecture**
-- Anthropic `AsyncAnthropic` client with `messages.stream()` API
-- Real-time chunk types: `text_delta` | `tool_use` | `message_stop`
-- Zero-buffering: text and tool calls emitted as they arrive
-- Server-Sent Events (SSE) protocol for frontend consumption
+**流式架构**
+- 使用 `AsyncAnthropic` 客户端的 `messages.stream()` API
+- 实时 Chunk 类型：`text_delta` | `tool_use` | `message_stop`
+- 零缓冲：文本和工具调用到达即推送
+- Server-Sent Events (SSE) 协议传输到前端
 
 **Agentic Loop**
 ```
-1. Gather RAG context + session memory -> build system prompt
-2. Stream LLM response with tool definitions
-3. On text_delta -> push SSE event to frontend (real-time typing)
-4. On tool_use -> execute tool -> push result -> continue conversation
-5. On no tool calls -> agent finished
-6. Max 16 steps safety boundary
+1. 收集 RAG 上下文 + Session 记忆 -> 构建 System Prompt
+2. 流式调用 LLM 并附带工具定义
+3. 收到 text_delta -> 推送 SSE 事件到前端（实时打字效果）
+4. 收到 tool_use -> 执行工具 -> 推送结果 -> 继续对话
+5. 无工具调用 -> Agent 完成
+6. 最多 16 步安全边界
 ```
 
-**Context-Aware System Prompt**
-- Injects workspace path and current file context
-- RAG-retrieved code snippets from project knowledge graph
-- Session memory summary from MemoryManager
-- Coding best practices (read before edit, minimal changes, run tests)
+**上下文感知的 System Prompt**
+- 注入工作区路径和当前文件上下文
+- RAG 检索的代码片段来自项目知识图谱
+- Session 记忆摘要来自 MemoryManager
+- 编码最佳实践（先读后改、最小变更、执行测试）
 
 ---
 
-### 3. Tool System with Sandbox Security
+### 3. 工具系统与沙箱安全
 
 > `backend/app/tools/`
 
-12 built-in tools with path sandboxing, command allowlisting, and resource limits.
+12 个内置工具，带路径沙箱、命令白名单和资源限制。
 
-**File Operations** (`file_ops.py`)
+**文件操作** (`file_ops.py`)
 
-| Tool | Capability | Security |
-|------|-----------|----------|
-| `read_file` | Line-numbered output with offset/limit pagination | Path sandbox validation |
-| `write_file` | Create or overwrite files, auto-create parent dirs | Sandbox escape prevention |
-| `edit_file` | Exact string match replacement (rejects ambiguous matches) | Single-match enforcement |
-| `list_directory` | Recursive tree view with 500-entry cap | Traversal protection |
-| `search_files` | Regex grep with glob filtering, 100-match cap | Output truncation (8KB) |
+| 工具 | 功能 | 安全机制 |
+|------|------|---------|
+| `read_file` | 行号输出，支持 offset/limit 分页 | 路径沙箱校验 |
+| `write_file` | 创建或覆盖文件，自动创建父目录 | 防止沙箱逃逸 |
+| `edit_file` | 精确字符串匹配替换（拒绝歧义匹配） | 单一匹配强制 |
+| `list_directory` | 递归目录树，500 条上限 | 遍历保护 |
+| `search_files` | 正则搜索 + Glob 过滤，100 条上限 | 输出截断（8KB） |
 
-**Shell Execution** (`shell.py`)
-- **Command Allowlist**: Only whitelisted executables run (`git`, `python`, `pytest`, `npm`, `node`, `make`, etc.)
-- **Environment Isolation**: Strips all env vars except `PATH`, `HOME`, `USER`, `LANG`, `TERM`, `SHELL`; sets `HOME` to sandbox
-- **Resource Limits**: 120-second timeout via `asyncio.wait_for`, output truncated at 8KB stdout + 2KB stderr
-- **Exit Code Tracking**: Structured output with `exit_code=N` for downstream evaluation
+**Shell 执行** (`shell.py`)
+- **命令白名单**：仅允许白名单内的可执行文件（`git`、`python`、`pytest`、`npm`、`node`、`make` 等）
+- **环境隔离**：仅保留 `PATH`、`HOME`、`USER`、`LANG`、`TERM`、`SHELL`，`HOME` 设为沙箱目录
+- **资源限制**：120 秒超时，stdout 截断 8KB + stderr 截断 2KB
+- **退出码追踪**：结构化输出 `exit_code=N` 用于下游评估
 
-**Git Operations** (`git_ops.py`)
-- `git_status`, `git_diff` (staged/unstaged), `git_log` (configurable depth)
-- `git_commit` — stage specific files + atomic commit
-- `git_branch` — list, create, and switch branches
-- `git push` **permanently blocked** — prevents unreviewed code from reaching remote
+**Git 操作** (`git_ops.py`)
+- `git_status`、`git_diff`（暂存/未暂存）、`git_log`（可配置深度）
+- `git_commit` — 暂存指定文件 + 原子提交
+- `git_branch` — 列表、创建、切换分支
+- `git_push` **永久禁用** — 防止未经审查的代码推送到远端
 
-**RAG Context Tool** (`rag_tool.py`)
-- Bridges existing RAG infrastructure into the LLM tool-use system
-- LLM can autonomously search the indexed codebase during problem-solving
+**RAG 上下文工具** (`rag_tool.py`)
+- 将 RAG 基础设施桥接到 LLM Tool-Use 系统
+- LLM 可在解题过程中自主搜索已索引的代码库
 
-**Path Sandbox Enforcement**
+**路径沙箱强制**
 ```python
-# All file tools enforce this before any I/O:
 resolved = (Path(workspace) / relative_path).resolve()
 if not str(resolved).startswith(str(Path(workspace).resolve())):
     raise PermissionError("Path escapes sandbox")
@@ -163,406 +162,438 @@ if not str(resolved).startswith(str(Path(workspace).resolve())):
 
 ---
 
-### 4. Multi-Layer RAG & Context Retrieval
+### 4. 多层 RAG 与上下文检索
 
 > `backend/app/services/rag_service.py` + `context_service.py` + `project_context_service.py`
 
-Three-tier retrieval with fallback chain: Project Graph -> Context Index -> Workspace Scan.
+三级检索降级链：项目图谱 -> 上下文索引 -> 工作区扫描。
 
-**Tier 1: Project Knowledge Graph** (`project_context_service.py` — 700+ lines)
+**第一层：项目知识图谱** (`project_context_service.py` — 700+ 行)
 
-Builds a semantic graph of the entire codebase:
+构建整个代码库的语义图谱：
 
-| Node Type | Content |
-|-----------|---------|
-| `file` | Source files with path, type, size |
-| `symbol` | Functions, classes with signatures and docstrings |
-| `module` | Logical module groupings |
+| 节点类型 | 内容 |
+|---------|------|
+| `file` | 源文件（路径、类型、大小） |
+| `symbol` | 函数/类（签名和文档注释） |
+| `module` | 逻辑模块分组 |
 
-| Edge Type | Meaning |
-|-----------|---------|
-| `contains` | File contains symbol |
-| `depends_on` | File imports module |
-| `calls` | Symbol invokes symbol |
-| `calls_file` | Symbol references file |
-| `extends` | Class inheritance |
+| 边类型 | 含义 |
+|--------|------|
+| `contains` | 文件包含符号 |
+| `depends_on` | 文件导入模块 |
+| `calls` | 符号调用符号 |
+| `calls_file` | 符号引用文件 |
+| `extends` | 类继承关系 |
 
-**Priority-Based Context Clipping**
+**优先级上下文裁剪**
 ```
-Current file:       +2.5 priority boost
-Direct dependencies: +1.4 (1-hop in dependency graph)
-Indirect deps:       +0.8 (2-hop transitive)
-Config files:        +0.5 (yaml, json, env)
+当前文件:        +2.5 优先级加成
+直接依赖:        +1.4（依赖图 1 跳）
+间接依赖:        +0.8（2 跳传递）
+配置文件:        +0.5（yaml, json, env）
 ```
 
-**Vector Similarity Search**
-- Deterministic 64-dim token-hash embeddings (no external API required)
-- Cosine similarity ranking across all indexed entities
-- Combined with graph-distance scoring for hybrid retrieval
+**向量相似度搜索**
+- 确定性 64 维 Token-Hash Embedding（无需外部 API）
+- 所有索引实体上的 Cosine Similarity 排序
+- 结合图距离评分实现混合检索
 
-**Tier 2: Context Index** (`context_service.py` — 270+ lines)
+**第二层：上下文索引** (`context_service.py` — 270+ 行)
 
-| Capability | Implementation |
-|-----------|---------------|
-| Symbol Extraction | Python AST parsing (classes, functions, signatures, docstrings); JS/TS regex patterns |
-| Dependency Tracking | `ast.Import`/`ast.ImportFrom` for Python; `import`/`require` regex for JS/TS |
-| Knowledge Chunking | 60-line semantic chunks with keyword extraction |
-| Retrieval Scoring | Token overlap + recency weighting + pinned/summary bonus (+0.6) |
+| 能力 | 实现方式 |
+|------|---------|
+| 符号提取 | Python AST 解析（类、函数、签名、文档注释）；JS/TS 正则模式 |
+| 依赖追踪 | Python 的 `ast.Import`/`ast.ImportFrom`；JS/TS 的 `import`/`require` 正则 |
+| 知识分块 | 60 行语义块 + 关键词提取 |
+| 检索评分 | Token 重叠 + 时间衰减 + 置顶/摘要加成（+0.6） |
 
-Supported file types: `.py`, `.ts`, `.tsx`, `.js`, `.java`, `.md`, `.yaml`, `.yml`, `.json`
+支持文件类型：`.py`、`.ts`、`.tsx`、`.js`、`.java`、`.md`、`.yaml`、`.yml`、`.json`
 
-**Tier 3: Workspace Fallback**
-- Direct file system scan when no index is available
-- Reads first 8 lines of each file as preview snippets
-- Budget-limited to 5000 chars
+**第三层：工作区降级**
+- 无索引时直接扫描文件系统
+- 读取每个文件前 8 行作为预览
+- 限制 5000 字符预算
 
-**Cross-File Understanding**
+**跨文件理解**
 ```bash
-# Find all files that call a specific function
+# 查找调用指定函数的所有文件
 POST /api/v1/project/callers
 {"function_name": "run", "repo_name": "codingAgent", "branch_name": "main"}
 ```
 
 ---
 
-### 5. Session Memory Management
+### 5. Session 记忆管理
 
 > `backend/app/services/memory_service.py`
 
-Intelligent conversation memory with deduplication, importance scoring, and automatic compression.
+智能对话记忆系统，支持去重、重要性评分和自动压缩。
 
-**Deduplication**
-- SHA256 content hash on normalized text
-- Identical messages across a session are stored once
+**去重机制**
+- 对标准化文本计算 SHA256 Content Hash
+- 同一 Session 内相同消息仅存储一次
 
-**Importance Scoring & Pinning**
-- 5-level importance score (1-5) for priority-based retrieval
-- Pinned messages are never evicted during compression
-- Summary memories created with importance=4 and auto-pinned
+**重要性评分与置顶**
+- 5 级重要性评分（1-5）用于优先级检索
+- 置顶消息在压缩时永不被淘汰
+- 摘要记忆自动创建为 importance=4 并置顶
 
-**Auto-Compression Strategy**
+**自动压缩策略**
 ```
-When session exceeds 80 items:
-  1. Keep most recent 36 items untouched
-  2. Select oldest unpinned, non-summary items
-  3. Batch 16 items -> extract topic words -> generate summary
-  4. Store summary as pinned memory (importance=4)
-  5. Delete original batch
+当 Session 超过 80 条记录时：
+  1. 保留最近 36 条不动
+  2. 选取最旧的未置顶、非摘要记录
+  3. 每批 16 条 -> 提取主题词 -> 生成摘要
+  4. 存储摘要为置顶记忆（importance=4）
+  5. 删除原始批次
 ```
 
-**Context Budget Control**
-- Memory retrieval capped at 5000 chars per query
-- Prevents token bloat in LLM system prompts
-- Recency-weighted scoring ensures recent context ranks higher
+**上下文预算控制**
+- 每次查询的记忆检索限制 5000 字符
+- 防止 LLM System Prompt 中的 Token 膨胀
+- 时间衰减权重确保近期上下文排名更高
 
 ---
 
-### 6. Multimodal Input Processing
+### 6. 多模态输入处理
 
 > `backend/app/services/multimodal_service.py`
 
-Accept images, audio, and documents as task inputs alongside text queries.
+支持图片、音频、文档作为任务输入，与文本查询并行处理。
 
-| Input Type | Processing | Tool |
-|-----------|-----------|------|
-| **Image** | OCR text extraction | Tesseract CLI |
-| **Audio** | Speech-to-text transcription | Whisper CLI |
-| **Document** | Text extraction | Direct file read |
-| **Text** | Inline or file-based | Native |
+| 输入类型 | 处理方式 | 工具 |
+|---------|---------|------|
+| **图片** | OCR 文字提取 | Tesseract CLI |
+| **音频** | 语音转文字 | Whisper CLI |
+| **文档** | 文本提取 | 直接文件读取 |
+| **文本** | 内联或基于文件 | 原生 |
 
-**Resilient Pipeline**
-- Supports file path, inline text, and base64 encoded inputs
-- Graceful fallback: records failures in `notes[]` without crashing
-- Each attachment's extracted text capped at 1600 chars
-- Query enriched with `[ATTACHMENT_CONTEXT]` block
-- Full preprocessing summary tracked: `attachment_count`, `processed_count`, `extracted_count`, `failed_count`
+**弹性管道**
+- 支持文件路径、内联文本、Base64 编码输入
+- 优雅降级：失败记录到 `notes[]` 但不崩溃
+- 每个附件提取文本上限 1600 字符
+- 查询中注入 `[ATTACHMENT_CONTEXT]` 块
+- 完整预处理统计：`attachment_count`、`processed_count`、`extracted_count`、`failed_count`
 
 ---
 
-### 7. Real-Time Web Frontend
+### 7. 实时 Web 前端
 
 > `frontend/` — React 18 + TypeScript + Vite + Tailwind CSS + Zustand
 
-Full-featured chat interface with streaming agent output and interactive tool cards.
+具备流式 Agent 输出和交互式工具卡片的全功能聊天界面。
 
-**SSE Streaming Protocol**
+**SSE 流式协议**
 
-| Event Type | Data | UI Behavior |
-|-----------|------|-------------|
-| `status` | `{message, step}` | Status indicator with step counter |
-| `text_delta` | `{text}` | Real-time character-by-character rendering |
-| `tool_call` | `{tool, input, id}` | Expandable tool call card |
-| `tool_result` | `{id, success, output}` | Success/failure badge + collapsible output |
-| `diff_preview` | `{path, detail}` | File change preview with path highlight |
-| `approval_required` | `{run_id, reason}` | Approve/Reject dialog |
-| `done` | `{run_id, status}` | Stream completion |
+| 事件类型 | 数据 | 界面行为 |
+|---------|------|---------|
+| `status` | `{message, step}` | 状态指示器 + 步骤计数 |
+| `text_delta` | `{text}` | 逐字实时渲染 |
+| `tool_call` | `{tool, input, id}` | 可展开工具调用卡片 |
+| `tool_result` | `{id, success, output}` | 成功/失败标记 + 可折叠输出 |
+| `diff_preview` | `{path, detail}` | 文件变更预览 |
+| `approval_required` | `{run_id, reason}` | 审批/拒绝对话框 |
+| `done` | `{run_id, status}` | 流完成 |
 
-**Component Architecture**
-- `ChatPanel` — Main conversation view with auto-scroll
-- `MessageBubble` — Markdown rendering with syntax highlighting (react-syntax-highlighter + VSCode Dark+ theme)
-- `ToolCallCard` — Expand/collapse tool invocations with JSON input and output display
-- `DiffPreview` — File modification preview with path header
-- `ApprovalDialog` — Human approval gate with Approve/Reject actions
-- `StatusIndicator` — Animated pulse indicator showing current agent step
+**组件架构**
+- `ChatPanel` — 主对话视图，自动滚动
+- `MessageBubble` — Markdown 渲染 + 语法高亮（VSCode Dark+ 主题）
+- `ToolCallCard` — 展开/折叠工具调用，显示 JSON 输入输出
+- `DiffPreview` — 文件变更预览
+- `ApprovalDialog` — 人工审批门控，审批/拒绝操作
+- `StatusIndicator` — 动画脉冲指示当前 Agent 步骤
 
-**State Management** — Zustand store with message streaming support:
-- `appendToLastAssistant()` for zero-flicker streaming text updates
-- Session persistence via `localStorage`
-- Automatic session creation on first visit
+**状态管理** — Zustand Store：
+- `appendToLastAssistant()` 实现零闪烁流式文本更新
+- `localStorage` 持久化 Session
+- 首次访问自动创建 Session
 
 ---
 
-### 8. Sandbox & Workspace Isolation
+### 8. 沙箱与工作区隔离
 
 > `backend/app/services/sandbox_service.py`
 
-Per-session isolated workspaces for safe agent execution.
+每个 Session 独立的隔离工作区，确保 Agent 安全执行。
 
-**Workspace Lifecycle**
+**工作区生命周期**
 ```
 create_workspace(session_id, source_path)
-  -> Git repo? Clone with --depth 1
-  -> Plain dir? shutil.copytree
-  -> No source? Empty workspace
+  -> Git 仓库？Clone --depth 1
+  -> 普通目录？shutil.copytree
+  -> 无源路径？空工作区
 
 destroy_workspace(session_id)
-  -> Full cleanup of /tmp/codex-sandbox/{session_id}/
+  -> 完全清理 /tmp/codex-sandbox/{session_id}/
 ```
 
-**Security Layers**
+**安全层级**
 
-| Layer | Mechanism |
-|-------|-----------|
-| Path Containment | `resolve()` + prefix check prevents `../` escape |
-| Command Allowlist | Only whitelisted executables can run |
-| Approval Gates | Dangerous operations pause for human review |
-| Resource Limits | 120s timeout, 8KB output cap, 16-step agent limit |
-| Environment Isolation | Stripped env vars, sandboxed HOME |
-| Push Blocking | `git push` permanently disabled in tool system |
+| 层级 | 机制 |
+|------|------|
+| 路径隔离 | `resolve()` + 前缀检查，防止 `../` 逃逸 |
+| 命令白名单 | 仅白名单内的可执行文件可运行 |
+| 审批门控 | 危险操作暂停等待人工审查 |
+| 资源限制 | 120 秒超时、8KB 输出上限、16 步 Agent 上限 |
+| 环境隔离 | 精简环境变量、沙箱化 HOME 目录 |
+| 推送阻断 | `git push` 在工具系统中永久禁用 |
 
 ---
 
-### 9. API Design
+### 9. 认证与多租户体系
 
-> `backend/app/api/routes.py` — 19+ REST endpoints + SSE + WebSocket
+> `backend/app/services/auth_service.py`
 
-**Agent Execution**
+**Google OAuth 2.0 登录**
+- 前端通过 Google Sign-In 获取 ID Token
+- 后端通过 `oauth2.googleapis.com/tokeninfo` 验证
+- 首次登录自动创建用户、租户、成员关系
+- 签发 Bearer Token（24 小时有效期）
 
-| Endpoint | Method | Description |
-|---------|--------|-------------|
-| `/agent/stream` | POST | LLM-driven agent with SSE streaming |
-| `/agent/ws/{run_id}` | WS | Real-time approval flow |
-| `/generate` | POST | DeepAgent orchestrator (full pipeline) |
-| `/agent/runs/{run_id}` | GET | Run detail with todos, evaluations, approvals |
-| `/agent/runs/{run_id}/approve` | POST | Human approval/rejection |
+**多租户隔离**
+- 所有资源（Session、Run）均绑定 `tenant_id`
+- 用户可属于多个租户，切换租户时签发新 Token
+- 角色体系：`member`、`admin`
 
-**Context & Knowledge**
-
-| Endpoint | Method | Description |
-|---------|--------|-------------|
-| `/context/index` | POST | Index workspace (files, symbols, deps, chunks) |
-| `/context/query` | POST | RAG retrieval by natural language query |
-| `/project/init` | POST | Build project graph + vector index |
-| `/project/context` | POST | File-aware project context retrieval |
-| `/project/callers` | POST | Find all callers of a function |
-| `/memory/optimize` | POST | Compress session memory |
-
-**Session Management**
-
-| Endpoint | Method | Description |
-|---------|--------|-------------|
-| `/auth/google/login` | POST | Google ID token login, returns bearer token + tenant context |
-| `/auth/me` | GET | Current authenticated user + tenant info |
-| `/auth/tenants` | GET | List all tenant memberships of current user |
-| `/auth/tenant/switch` | POST | Switch active tenant and mint a new tenant-scoped bearer token |
-| `/auth/tenant/invitations` | POST | Owner/Admin invites a member by email (returns `invite_link` + email delivery status) |
-| `/auth/tenant/invitations` | GET | Owner/Admin lists tenant invitations |
-| `/auth/tenant/invitations/accept` | POST | Invitee accepts invitation and gets tenant-scoped token |
-| `/sessions` | POST | Create user session |
-| `/health` | GET | Service health check |
+**邀请系统**
+- Owner/Admin 发起邀请，邮件自动送达（Resend / SendGrid）
+- 唯一邀请码，默认 72 小时过期
+- 受邀者通过邀请码加入租户
+- 追踪邀请人身份和备注用于审计
 
 ---
 
-### 10. Data Layer (20+ Tables)
+### 10. IDE 集成
 
-> OceanBase (MySQL mode) with SQLite fallback for development
+> `extension/` — VS Code Extension
 
-**Session Domain**
-```
-sessions -> requirements (priority, estimated_points)
-         -> interaction_memories (content_hash, importance, pinned)
-```
+- **命令**：`Coding Agent: Ask` — 从任意文件触发
+- **当前文件感知**：自动捕获活跃编辑器文件路径，提升上下文相关性
+- **附件支持**：可指定图片、音频、文档作为多模态输入
+- **可配置端点**：通过 `codingAgent.baseUrl` 设置指向任意后端实例
+- **Session 持久化**：Session ID 存储在 VS Code globalState 中，跨重启保持
 
-**Auth & Tenant Domain**
+---
+
+## API 设计
+
+> `backend/app/api/routes.py` — 19+ REST 端点 + SSE + WebSocket
+
+**Agent 执行**
+
+| 端点 | 方法 | 说明 |
+|-----|------|------|
+| `/agent/stream` | POST | LLM Agent + SSE 流式响应 |
+| `/agent/ws/{run_id}` | WS | 实时审批流 |
+| `/generate` | POST | DeepAgent 编排器（完整流水线） |
+| `/agent/runs/{run_id}` | GET | 运行详情（Todo、评估、审批） |
+| `/agent/runs/{run_id}/approve` | POST | 人工审批/拒绝 |
+
+**上下文与知识**
+
+| 端点 | 方法 | 说明 |
+|-----|------|------|
+| `/context/index` | POST | 索引工作区（文件、符号、依赖、知识块） |
+| `/context/query` | POST | 自然语言 RAG 检索 |
+| `/project/init` | POST | 构建项目图谱 + 向量索引 |
+| `/project/context` | POST | 文件感知的项目上下文检索 |
+| `/project/callers` | POST | 查找函数的所有调用者 |
+| `/memory/optimize` | POST | 压缩 Session 记忆 |
+
+**认证与租户**
+
+| 端点 | 方法 | 说明 |
+|-----|------|------|
+| `/auth/google/login` | POST | Google ID Token 登录 |
+| `/auth/me` | GET | 当前用户 + 租户信息 |
+| `/auth/tenants` | GET | 列出用户所有租户 |
+| `/auth/tenant/switch` | POST | 切换租户并签发新 Token |
+| `/auth/tenant/invitations` | POST | 邀请成员（邮件送达） |
+| `/auth/tenant/invitations` | GET | 列出租户邀请 |
+| `/auth/tenant/invitations/accept` | POST | 接受邀请 |
+| `/sessions` | POST | 创建 Session |
+| `/health` | GET | 健康检查 |
+
+---
+
+## 数据层（20+ 张表）
+
+> OceanBase (MySQL 模式) + SQLite 开发降级
+
+**认证与租户域**
 ```
-tenants -> tenant_members (role)
-tenants -> tenant_invitations (invite_code, status, expires_at)
+tenants -> tenant_members (角色)
+tenants -> tenant_invitations (邀请码、状态、过期时间)
 users -> google_identities (google_sub)
 auth_tokens (user_id, tenant_id, expires_at, revoked)
 sessions (tenant_id, owner_user_id)
 ```
 
-**Agent Runtime Domain**
+**Session 域**
 ```
-agent_runs -> agent_todos (role, depends_on_json, attempt_count)
-           -> task_evaluations (passed, score, reason, next_action)
-           -> approval_events (gate_type, decision, operator)
-           -> agent_file_changes (change_type, diff_text, status)
+sessions -> requirements (优先级、估算点数)
+         -> interaction_memories (content_hash、重要性、置顶)
 ```
 
-**Knowledge Domain**
+**Agent 运行时域**
 ```
-project_files -> code_symbols (name, type, signature, docstring)
-              -> dependency_edges (source_file -> target_module)
-              -> knowledge_chunks (text, keywords, line range)
+agent_runs -> agent_todos (角色、依赖 JSON、尝试次数)
+           -> task_evaluations (通过、分数、原因、下一步动作)
+           -> approval_events (门控类型、决策、操作者)
+           -> agent_file_changes (变更类型、diff 文本、状态)
 ```
 
-**Graph & Vector Domain**
+**知识域**
+```
+project_files -> code_symbols (名称、类型、签名、文档注释)
+              -> dependency_edges (源文件 -> 目标模块)
+              -> knowledge_chunks (文本、关键词、行范围)
+```
+
+**图谱与向量域**
 ```
 project_graph_nodes (file / symbol / module)
 project_graph_edges (contains / depends_on / calls / extends)
-project_vectors (64-dim embeddings, cosine similarity)
+project_vectors (64 维 Embedding、Cosine Similarity)
 ```
 
-**Observability**
+**可观测性**
 ```
-tool_calls (tool_name, request, response, latency_ms)
-audit_events (actor, action, entity tracking)
-```
-
----
-
-### 11. IDE Integration
-
-> `extension/` — VS Code Extension
-
-- **Command**: `Coding Agent: Ask` — trigger agent from any file
-- **Current File Awareness**: Automatically captures active editor file path, boosting context relevance
-- **Attachment Support**: Specify images, audio, and documents as multimodal inputs
-- **Configurable Endpoint**: Point to any backend instance via `codingAgent.baseUrl` setting
-- **Session Persistence**: Session ID stored in VS Code global state across restarts
-
----
-
-## Quick Start
-
-```bash
-# 1. Backend
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-echo "ANTHROPIC_API_KEY=sk-ant-xxx" > .env
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
-
-# 2. Frontend
-cd frontend
-npm install
-cp .env.example .env.local
-# set VITE_GOOGLE_CLIENT_ID in .env.local
-npm run dev
-# -> http://localhost:5173
-
-# 3. (Optional) Initialize OceanBase
-mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/init_oceanbase.sql
-# Existing DB upgrade:
-mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260303_auth_tenant_isolation.sql
-mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260303_auth_tenant_invitations.sql
-
-# 4. (Optional) Build project index for enhanced RAG
-python3 scripts/build_context.py --workspace . --repo codingAgent --branch main
-python3 scripts/build_project_context.py --workspace . --repo codingAgent --branch main
-```
-
-If `pymysql` is unavailable, the app falls back to local SQLite (`coding_agent_dev.db`) automatically.
-
-Auth/Tenant env knobs (optional):
-- `AUTH_REQUIRED=true` to force bearer auth
-- `AUTH_GOOGLE_VERIFY_MODE=tokeninfo` (production) or `dev_unverified` (local debug)
-- `AUTH_GOOGLE_CLIENT_IDS=<google-web-client-id>[,<another-id>]`
-- `VITE_GOOGLE_CLIENT_ID=<google-web-client-id>` (frontend Google Sign-In button)
-- Tenant-scoped resources (`session_id` / `run_id`) deny anonymous access once bound to a tenant.
-- Invite email knobs:
-  - `INVITE_EMAIL_ENABLED=true`
-  - `INVITE_EMAIL_PROVIDER=resend|sendgrid|noop`
-  - `INVITE_EMAIL_REQUIRED=true|false` (if `true`, invite API returns 502 when delivery fails)
-  - `INVITE_ACCEPT_URL_BASE=https://your-frontend-domain`
-  - `INVITE_EMAIL_FROM=noreply@yourdomain.com`
-  - `RESEND_API_KEY=...` or `SENDGRID_API_KEY=...`
-
-Google Sign-In setup (local + production):
-1. In Google Cloud Console, create **OAuth 2.0 Client ID** of type **Web application**.
-2. Add authorized JavaScript origins:
-   - Local: `http://localhost:5173` and/or `http://127.0.0.1:5173`
-   - Production: your frontend domain, e.g. `https://agent.example.com`
-3. Frontend config:
-   - `frontend/.env.local` (local) or deployment env (production):
-     - `VITE_GOOGLE_CLIENT_ID=<your-web-client-id>`
-4. Backend config:
-   - `AUTH_GOOGLE_VERIFY_MODE=tokeninfo`
-   - `AUTH_GOOGLE_CLIENT_IDS=<same-client-id>[,<other-allowed-client-id>]`
-5. Restart frontend and backend after env changes.
-
-Invite email delivery:
-1. `POST /api/v1/auth/tenant/invitations` now auto-sends invite email when `INVITE_EMAIL_ENABLED=true`.
-2. Response includes:
-   - `invite_link`
-   - `email_sent`
-   - `email_provider`
-   - `email_message_id`
-   - `email_error`
-
-### Makefile Shortcuts
-
-```bash
-make backend-install    # Create venv + install deps
-make backend-run        # Start FastAPI on port 8080
-make backend-test       # Run pytest
-make frontend-install   # npm install
-make frontend-dev       # Vite dev server on port 5173
-make frontend-build     # Production build
-make context-index      # Build RAG context
-make project-index      # Build project graph + vectors
+tool_calls (工具名、请求、响应、延迟毫秒)
+audit_events (操作者、动作、实体追踪)
 ```
 
 ---
 
-## Tech Stack
+## 技术栈
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, TypeScript, Vite, Tailwind CSS, Zustand |
-| Backend | FastAPI, SQLAlchemy 2.0, Pydantic v2 |
-| LLM | Anthropic Claude API (streaming tool-use) |
-| Database | OceanBase (MySQL mode) / SQLite fallback |
-| Streaming | Server-Sent Events (SSE) + WebSocket |
+| 层级 | 技术 |
+|------|------|
+| 前端 | React 18、TypeScript、Vite、Tailwind CSS、Zustand |
+| 后端 | FastAPI、SQLAlchemy 2.0、Pydantic v2 |
+| LLM | Anthropic Claude API（Streaming Tool-Use） |
+| 数据库 | OceanBase (MySQL 模式) / SQLite 降级兜底 |
+| 实时通信 | Server-Sent Events (SSE) + WebSocket |
 | IDE | VS Code Extension (TypeScript) |
-| Multimodal | Tesseract OCR, Whisper ASR |
+| 多模态 | Tesseract OCR、Whisper ASR |
 
 ---
 
-## Project Structure
+## 项目结构
 
 ```
 codingAgent/
   backend/
     app/
-      api/           # Routes + Pydantic schemas
-      core/          # Configuration (pydantic-settings)
-      repositories/  # Data access layer (Repository pattern)
-      services/      # Agent, LLM, Memory, RAG, Context, Sandbox, Multimodal
-      tools/         # File ops, Shell, Git, RAG (12 built-in tools)
-      models.py      # SQLAlchemy ORM (20+ entities)
-      db.py          # Sync + Async engine with fallback
-      main.py        # FastAPI app with CORS + static serving
-    tests/           # pytest test suite
+      api/           # 路由 + Pydantic Schema
+      core/          # 配置管理（pydantic-settings）
+      repositories/  # 数据访问层（Repository 模式）
+      services/      # Agent、LLM、Memory、RAG、Context、Sandbox、Multimodal
+      tools/         # 文件操作、Shell、Git、RAG（12 个内置工具）
+      models.py      # SQLAlchemy ORM（20+ 实体）
+      db.py          # 同步 + 异步引擎，自动降级
+      main.py        # FastAPI 应用（CORS + 静态文件）
+    tests/           # pytest 测试套件
   frontend/
     src/
-      api/           # HTTP + SSE client
-      components/    # ChatPanel, ToolCallCard, DiffPreview, ApprovalDialog
-      hooks/         # useAgentStream, useSession
-      stores/        # Zustand state management
-  extension/         # VS Code extension
-  scripts/           # Offline indexing pipelines
-  sql/               # OceanBase schema + migrations
-  docs/              # Architecture documents
+      api/           # HTTP + SSE 客户端
+      components/    # ChatPanel、ToolCallCard、DiffPreview、ApprovalDialog
+      hooks/         # useAgentStream、useSession
+      stores/        # Zustand 状态管理
+  extension/         # VS Code 插件
+  scripts/           # 离线索引管道
+  sql/               # OceanBase Schema + Migration
+  docs/              # 架构设计文档
 ```
+
+---
+
+## 快速启动
+
+```bash
+# 1. 后端
+cd backend
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+echo "LLM_API_KEY=your-api-key" > .env
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
+
+# 2. 前端
+cd frontend
+npm install
+cp .env.example .env.local
+# 在 .env.local 中设置 VITE_GOOGLE_CLIENT_ID
+npm run dev
+# -> http://localhost:5173
+
+# 3.（可选）初始化 OceanBase
+mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/init_oceanbase.sql
+mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260303_auth_tenant_isolation.sql
+mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260303_auth_tenant_invitations.sql
+
+# 4.（可选）构建项目索引以增强 RAG
+python3 scripts/build_context.py --workspace . --repo codingAgent --branch main
+python3 scripts/build_project_context.py --workspace . --repo codingAgent --branch main
+```
+
+若 `pymysql` 不可用，应用自动降级到本地 SQLite（`coding_agent_dev.db`）。
+
+### Makefile 快捷命令
+
+```bash
+make backend-install    # 创建虚拟环境 + 安装依赖
+make backend-run        # 启动 FastAPI（端口 8080）
+make backend-test       # 运行 pytest
+make frontend-install   # npm install
+make frontend-dev       # Vite 开发服务器（端口 5173）
+make frontend-build     # 生产构建
+make context-index      # 构建 RAG 上下文索引
+make project-index      # 构建项目图谱 + 向量索引
+```
+
+---
+
+## 环境变量配置
+
+<details>
+<summary>点击展开完整配置说明</summary>
+
+### 认证配置
+```bash
+AUTH_REQUIRED=true                          # 强制 Bearer 认证
+AUTH_ACCESS_TOKEN_TTL_HOURS=24              # Token 有效期
+AUTH_GOOGLE_VERIFY_MODE=tokeninfo           # 生产模式；dev_unverified 用于本地调试
+AUTH_GOOGLE_CLIENT_IDS=<google-client-id>   # 允许的 Google Client ID（逗号分隔）
+```
+
+### 邀请邮件配置
+```bash
+INVITE_EMAIL_ENABLED=true                   # 启用邮件发送
+INVITE_EMAIL_PROVIDER=resend|sendgrid|noop  # 邮件提供商
+INVITE_EMAIL_REQUIRED=true|false            # true 时发送失败返回 502
+INVITE_ACCEPT_URL_BASE=https://your-domain  # 前端域名
+INVITE_EMAIL_FROM=noreply@yourdomain.com    # 发件人
+RESEND_API_KEY=...                          # Resend API Key
+SENDGRID_API_KEY=...                        # SendGrid API Key
+```
+
+### LLM 配置
+```bash
+LLM_API_KEY=sk-...                          # LLM API Key
+LLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+LLM_MODEL=glm-4-plus                       # 主模型
+LLM_VISION_MODEL=glm-4v-plus               # 视觉模型
+LLM_MAX_TOKENS=4096                         # 最大输出 Token
+```
+
+### 数据库配置
+```bash
+OCEANBASE_HOST=127.0.0.1
+OCEANBASE_PORT=2881
+OCEANBASE_USER=root@test
+OCEANBASE_PASSWORD=
+OCEANBASE_DATABASE=coding_agent
+```
+
+</details>

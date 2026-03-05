@@ -378,7 +378,7 @@ destroy_workspace(session_id)
 - **可配置端点**：通过 `codingAgent.baseUrl` 设置指向任意后端实例
 - **Session 持久化**：Session ID 存储在 VS Code globalState 中，跨重启保持
 
-### 11. Data Agent 数据分析子系统（新增）
+### 11. Data Agent 数据分析子系统
 
 > `backend/app/api/data_routes.py` + `backend/app/services/data_agent_service.py`
 

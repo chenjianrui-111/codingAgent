@@ -5,6 +5,7 @@ from app.tools.file_ops import EditFileTool, ListDirectoryTool, ReadFileTool, Se
 from app.tools.shell import ShellTool
 from app.tools.git_ops import GitBranchTool, GitCommitTool, GitDiffTool, GitLogTool, GitStatusTool
 from app.tools.rag_tool import SearchCodebaseTool
+from app.tools.data_tools import AnalyzeDatasetTool, ExecutePythonTool, GenerateChartTool, QueryDataTool
 
 
 def create_default_registry() -> ToolRegistry:
@@ -23,6 +24,19 @@ def create_default_registry() -> ToolRegistry:
         GitLogTool(),
         GitBranchTool(),
         SearchCodebaseTool(),
+    ]:
+        registry.register(tool)
+    return registry
+
+
+def create_data_registry() -> ToolRegistry:
+    """Create a ToolRegistry with data analysis tools + standard tools."""
+    registry = create_default_registry()
+    for tool in [
+        ExecutePythonTool(),
+        AnalyzeDatasetTool(),
+        GenerateChartTool(),
+        QueryDataTool(),
     ]:
         registry.register(tool)
     return registry

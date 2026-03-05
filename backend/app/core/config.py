@@ -36,6 +36,7 @@ class Settings(BaseSettings):
 
     # Auth / Tenant
     auth_required: bool = False
+    auth_dev_token: str = ""  # 开发环境白名单 Token，非空时启动自动创建 dev 用户
     auth_access_token_ttl_hours: int = 24
     auth_google_verify_mode: str = "tokeninfo"  # tokeninfo | dev_unverified
     auth_google_client_ids: str = ""
@@ -52,7 +53,12 @@ class Settings(BaseSettings):
 
     # Sandbox
     sandbox_workspace_root: str = "/tmp/codex-sandbox"
-    allowed_shell_commands: str = "git,ls,find,grep,python,node,npm,pip,pytest,make,cat,head,tail"
+    allowed_shell_commands: str = "git,ls,find,grep,python,python3,node,npm,pip,pytest,make,cat,head,tail"
+
+    # Data Agent
+    data_agent_max_steps: int = 20
+    data_kernel_timeout: int = 120
+    data_max_upload_size_mb: int = 200
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

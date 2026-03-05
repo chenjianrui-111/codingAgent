@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import AcceptInvitationPage from './components/AcceptInvitationPage'
 import AuthLoginPanel from './components/AuthLoginPanel'
 import ChatPanel from './components/ChatPanel'
+import DataAnalysisPanel from './components/DataAnalysisPanel'
 import { useAuth } from './hooks/useAuth'
 import { useSession } from './hooks/useSession'
+import { useChatStore } from './stores/chatStore'
 
 export default function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname)
@@ -21,6 +23,7 @@ export default function App() {
     acceptInvitationByCode,
   } = useAuth()
   const sessionId = useSession()
+  const accessToken = useChatStore((s) => s.accessToken)
 
   useEffect(() => {
     const onPopState = () => setPathname(window.location.pathname)
@@ -28,19 +31,16 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
-  const openAcceptPage = () => {
-    if (window.location.pathname !== '/accept-invite') {
-      window.history.pushState({}, '', '/accept-invite')
-      setPathname('/accept-invite')
+  const navigate = (path: string) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path)
+      setPathname(path)
     }
   }
 
-  const openChatPage = () => {
-    if (window.location.pathname !== '/') {
-      window.history.pushState({}, '', '/')
-      setPathname('/')
-    }
-  }
+  const openAcceptPage = () => navigate('/accept-invite')
+  const openChatPage = () => navigate('/')
+  const openDataPage = () => navigate('/data')
 
   if (!ready) {
     return (
@@ -83,6 +83,16 @@ export default function App() {
     )
   }
 
+  if (pathname === '/data') {
+    return (
+      <DataAnalysisPanel
+        sessionId={sessionId}
+        accessToken={accessToken || undefined}
+        onBack={openChatPage}
+      />
+    )
+  }
+
   return (
     <ChatPanel
       userEmail={user.email}
@@ -100,6 +110,7 @@ export default function App() {
       }}
       onLoadPendingInvites={async () => fetchInvitations('pending')}
       onOpenAcceptPage={openAcceptPage}
+      onOpenDataPage={openDataPage}
       onLogout={logout}
     />
   )

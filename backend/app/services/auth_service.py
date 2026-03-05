@@ -384,3 +384,50 @@ class AuthService:
 
     def _generate_invite_code(self) -> str:
         return "inv_" + secrets.token_urlsafe(24)
+
+    # ------------------------------------------------------------------
+    # Dev token bootstrap
+    # ------------------------------------------------------------------
+
+    def ensure_dev_token(self) -> None:
+        """若 AUTH_DEV_TOKEN 非空，确保数据库中存在对应的用户/租户/Token 记录。"""
+        dev_token = (settings.auth_dev_token or "").strip()
+        if not dev_token:
+            return
+
+        existing = self.repo.get_auth_token(dev_token)
+        if existing:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if existing.expires_at > now:
+                return
+            # Token 已过期，续期 10 年
+            existing.expires_at = now + timedelta(days=3650)
+            self.repo.db.commit()
+            return
+
+        # 创建 dev 用户（幂等：email 不重复则创建）
+        dev_email = "dev@localhost"
+        user = self.repo.get_user_by_email(dev_email)
+        if not user:
+            user = self.repo.create_user(dev_email, display_name="Dev User", avatar_url=None)
+
+        # 创建 dev 租户（幂等）
+        dev_slug = "dev-local"
+        tenant = self.repo.get_tenant_by_slug(dev_slug)
+        if not tenant:
+            tenant = self.repo.create_tenant(tenant_name="Dev Workspace", tenant_slug=dev_slug)
+
+        # 创建 membership（幂等）
+        membership = self.repo.get_tenant_membership(tenant.tenant_id, user.user_id)
+        if not membership:
+            self.repo.create_tenant_membership(tenant.tenant_id, user.user_id, role="owner")
+
+        # 创建 auth token，10 年有效
+        expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=3650)
+        self.repo.create_auth_token(
+            access_token=dev_token,
+            user_id=user.user_id,
+            tenant_id=tenant.tenant_id,
+            role="owner",
+            expires_at=expires_at,
+        )

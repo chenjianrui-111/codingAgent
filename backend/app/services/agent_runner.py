@@ -211,6 +211,16 @@ class AgentRunner:
                         },
                     )
 
+                # Emit figure events for data tools
+                if result.metadata and result.metadata.get("figures"):
+                    yield StreamEvent(
+                        "figures",
+                        {
+                            "tool": tc.tool_name,
+                            "figures": result.metadata["figures"],
+                        },
+                    )
+
                 # OpenAI format: each tool result is a separate "tool" role message
                 messages.append({
                     "role": "tool",

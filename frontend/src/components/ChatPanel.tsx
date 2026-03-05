@@ -26,6 +26,7 @@ interface Props {
   }>
   onLoadPendingInvites: () => Promise<TenantInvitationItem[]>
   onOpenAcceptPage: () => void
+  onOpenDataPage?: () => void
   onLogout: () => void
 }
 
@@ -37,6 +38,7 @@ export default function ChatPanel({
   onInvite,
   onLoadPendingInvites,
   onOpenAcceptPage,
+  onOpenDataPage,
   onLogout,
 }: Props) {
   const messages = useChatStore((s) => s.messages)
@@ -129,6 +131,15 @@ export default function ChatPanel({
           >
             Invite
           </button>
+          {onOpenDataPage && (
+            <button
+              onClick={onOpenDataPage}
+              type="button"
+              className="rounded-lg border border-purple-700 px-2 py-1 text-xs text-purple-200 hover:bg-purple-900/40"
+            >
+              Data Agent
+            </button>
+          )}
           <button
             onClick={onOpenAcceptPage}
             type="button"

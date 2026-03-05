@@ -1,5 +1,9 @@
 import type {
   AuthMeResponse,
+  DataExecuteResponse,
+  DatasetDetailResponse,
+  DatasetListItem,
+  DatasetUploadResponse,
   GoogleLoginResponse,
   TenantInvitationAcceptResponse,
   TenantInvitationListResponse,
@@ -140,4 +144,110 @@ export async function acceptTenantInvitation(
     body: JSON.stringify({ invite_code: inviteCode }),
   })
   return parseJson<TenantInvitationAcceptResponse>(res)
+}
+
+// ---------------------------------------------------------------------------
+// Data Agent API
+// ---------------------------------------------------------------------------
+
+export async function uploadDataset(
+  file: File,
+  sessionId: string,
+  accessToken?: string,
+): Promise<DatasetUploadResponse> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('session_id', sessionId)
+
+  const headers: Record<string, string> = {}
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+
+  const res = await fetch(`${API_BASE}/data/upload`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  })
+  return parseJson<DatasetUploadResponse>(res)
+}
+
+export async function listDatasets(
+  sessionId?: string,
+  accessToken?: string,
+): Promise<{ datasets: DatasetListItem[] }> {
+  const params = new URLSearchParams()
+  if (sessionId) params.set('session_id', sessionId)
+
+  const res = await fetch(`${API_BASE}/data/datasets?${params}`, {
+    method: 'GET',
+    headers: buildHeaders(accessToken),
+  })
+  return parseJson<{ datasets: DatasetListItem[] }>(res)
+}
+
+export async function getDatasetDetail(
+  datasetId: string,
+  accessToken?: string,
+): Promise<DatasetDetailResponse> {
+  const res = await fetch(`${API_BASE}/data/datasets/${datasetId}`, {
+    method: 'GET',
+    headers: buildHeaders(accessToken),
+  })
+  return parseJson<DatasetDetailResponse>(res)
+}
+
+export async function deleteDataset(
+  datasetId: string,
+  accessToken?: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/data/datasets/${datasetId}`, {
+    method: 'DELETE',
+    headers: buildHeaders(accessToken),
+  })
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`)
+}
+
+export async function executeCode(
+  sessionId: string,
+  code: string,
+  datasetId?: string,
+  accessToken?: string,
+): Promise<DataExecuteResponse> {
+  const body: Record<string, unknown> = { session_id: sessionId, code }
+  if (datasetId) body.dataset_id = datasetId
+
+  const res = await fetch(`${API_BASE}/data/execute`, {
+    method: 'POST',
+    headers: buildHeaders(accessToken),
+    body: JSON.stringify(body),
+  })
+  return parseJson<DataExecuteResponse>(res)
+}
+
+export async function dataAnalyzeStream(
+  sessionId: string,
+  datasetId: string,
+  query: string,
+  accessToken?: string,
+): Promise<Response> {
+  const res = await fetch(`${API_BASE}/data/analyze`, {
+    method: 'POST',
+    headers: buildHeaders(accessToken),
+    body: JSON.stringify({ session_id: sessionId, dataset_id: datasetId, query }),
+  })
+  if (!res.ok) throw new Error(`Data analysis failed: ${res.status}`)
+  return res
+}
+
+export async function autoEDAStream(
+  sessionId: string,
+  datasetId: string,
+  accessToken?: string,
+): Promise<Response> {
+  const res = await fetch(`${API_BASE}/data/auto-eda`, {
+    method: 'POST',
+    headers: buildHeaders(accessToken),
+    body: JSON.stringify({ session_id: sessionId, dataset_id: datasetId }),
+  })
+  if (!res.ok) throw new Error(`Auto EDA failed: ${res.status}`)
+  return res
 }

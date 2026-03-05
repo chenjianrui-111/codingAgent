@@ -36,7 +36,11 @@ export function useAuth() {
   )
 
   useEffect(() => {
-    const storedToken = localStorage.getItem(ACCESS_TOKEN_KEY)
+    const devToken = import.meta.env.VITE_DEV_TOKEN || ''
+    const storedToken = devToken || localStorage.getItem(ACCESS_TOKEN_KEY)
+    if (devToken) {
+      localStorage.setItem(ACCESS_TOKEN_KEY, devToken)
+    }
     if (!storedToken) {
       setReady(true)
       return

@@ -325,3 +325,86 @@ class AgentStreamRequest(BaseModel):
     current_file: str | None = None
     workspace: str | None = None
     attachments: list[AttachmentInput] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Data Agent schemas
+# ---------------------------------------------------------------------------
+
+
+class DatasetColumnInfo(BaseModel):
+    name: str
+    dtype: str
+    nullable: bool = True
+    unique_count: int = 0
+    null_count: int = 0
+    min_value: str | None = None
+    max_value: str | None = None
+    mean_value: str | None = None
+    sample_values: list[str] = Field(default_factory=list)
+
+
+class DatasetUploadResponse(BaseModel):
+    dataset_id: str
+    name: str
+    file_type: str
+    file_size_bytes: int
+    row_count: int
+    column_count: int
+    columns: list[DatasetColumnInfo]
+    status: str
+
+
+class DatasetListItem(BaseModel):
+    dataset_id: str
+    name: str
+    file_type: str
+    row_count: int
+    column_count: int
+    file_size_bytes: int
+    status: str
+    created_at: datetime
+
+
+class DatasetListResponse(BaseModel):
+    datasets: list[DatasetListItem]
+
+
+class DatasetDetailResponse(BaseModel):
+    dataset_id: str
+    name: str
+    file_type: str
+    file_size_bytes: int
+    row_count: int
+    column_count: int
+    columns: list[DatasetColumnInfo]
+    summary: dict | None = None
+    sample_rows: list[dict] = Field(default_factory=list)
+    status: str
+    created_at: datetime
+
+
+class DataAnalyzeRequest(BaseModel):
+    session_id: str
+    dataset_id: str
+    query: str = Field(min_length=1)
+
+
+class DataExecuteRequest(BaseModel):
+    session_id: str
+    code: str = Field(min_length=1)
+    dataset_id: str | None = None
+
+
+class DataExecuteResponse(BaseModel):
+    success: bool
+    stdout: str = ""
+    stderr: str = ""
+    display: str | None = None
+    figures: list[dict] = Field(default_factory=list)
+    execution_time_ms: int = 0
+
+
+class DataAutoEDARequest(BaseModel):
+    session_id: str
+    dataset_id: str

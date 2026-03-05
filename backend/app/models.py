@@ -396,3 +396,74 @@ class AgentFileChangeEntity(Base):
     diff_text: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")  # pending / applied / rejected
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Data Agent entities
+# ---------------------------------------------------------------------------
+
+
+class DatasetEntity(Base):
+    """An uploaded or connected dataset available for analysis."""
+
+    __tablename__ = "datasets"
+
+    dataset_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.session_id"), nullable=False, index=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(256), nullable=False)
+    file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(32), nullable=False)  # csv / excel / json / parquet / sqlite
+    file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    column_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    schema_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: column metadata
+    summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: descriptive stats
+    sample_rows_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: first N rows
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="ready")  # uploading / ready / error
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    columns: Mapped[list["DatasetColumnEntity"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
+    analyses: Mapped[list["DataAnalysisRunEntity"]] = relationship(back_populates="dataset", cascade="all, delete-orphan")
+
+
+class DatasetColumnEntity(Base):
+    """Schema metadata for each column in a dataset."""
+
+    __tablename__ = "dataset_columns"
+
+    column_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.dataset_id"), nullable=False, index=True)
+    column_name: Mapped[str] = mapped_column(String(256), nullable=False)
+    dtype: Mapped[str] = mapped_column(String(64), nullable=False)  # int64 / float64 / object / datetime64 / bool
+    nullable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    unique_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    null_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    min_value: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    max_value: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    mean_value: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    sample_values_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: top 5 sample values
+
+    dataset: Mapped[DatasetEntity] = relationship(back_populates="columns")
+
+
+class DataAnalysisRunEntity(Base):
+    """A single data analysis execution (NL query → code → result)."""
+
+    __tablename__ = "data_analysis_runs"
+
+    analysis_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    dataset_id: Mapped[str] = mapped_column(ForeignKey("datasets.dataset_id"), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(ForeignKey("sessions.session_id"), nullable=False, index=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False)
+    generated_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_stdout: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_stderr: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: structured result
+    visualization_paths_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: list of chart file paths
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")  # pending / running / completed / failed
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_time_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    dataset: Mapped[DatasetEntity] = relationship(back_populates="analyses")

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import router as api_router
+from app.api.data_routes import data_router
 from app.core.config import settings
 from app.db import Base, engine, ensure_sqlite_compat_schema
 
@@ -33,8 +34,35 @@ def on_startup() -> None:
     except Exception as exc:  # pragma: no cover
         logger.warning("database init skipped: %s", exc)
 
+    # Dev token bootstrap
+    try:
+        from app.db import SessionLocal
+        from app.repositories.agent_repo import AgentRepository
+        from app.services.auth_service import AuthService
+
+        db = SessionLocal()
+        try:
+            AuthService(AgentRepository(db)).ensure_dev_token()
+            db.commit()
+        finally:
+            db.close()
+    except Exception as exc:  # pragma: no cover
+        logger.warning("dev token bootstrap skipped: %s", exc)
+
 
 app.include_router(api_router, prefix=settings.api_prefix)
+app.include_router(data_router, prefix=settings.api_prefix)
+
+
+@app.on_event("shutdown")
+async def on_shutdown() -> None:
+    """Clean up kernel processes on app shutdown."""
+    try:
+        from app.services.python_kernel_service import kernel_manager
+        await kernel_manager.shutdown_all()
+    except Exception as exc:  # pragma: no cover
+        logger.warning("kernel shutdown error: %s", exc)
+
 
 # ---------------------------------------------------------------------------
 # Serve frontend static build in production

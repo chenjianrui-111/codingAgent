@@ -378,6 +378,64 @@ destroy_workspace(session_id)
 - **可配置端点**：通过 `codingAgent.baseUrl` 设置指向任意后端实例
 - **Session 持久化**：Session ID 存储在 VS Code globalState 中，跨重启保持
 
+### 11. Data Agent 数据分析子系统（新增）
+
+> `backend/app/api/data_routes.py` + `backend/app/services/data_agent_service.py`
+
+在现有 DeepAgent 编排之上新增数据分析能力，形成“上传数据 -> 自动建模上下文 -> 对话分析/代码执行 -> 图表流式回显”的闭环。
+
+**业界对标与借鉴**
+
+| 产品 | 核心能力 | 本项目借鉴点 |
+|------|----------|--------------|
+| Julius AI | 文件优先 + Learning Sub Agent | 自动 Schema 发现 + 统计摘要注入 |
+| ChatGPT Code Interpreter | Jupyter 内核 | 会话级有状态 Python Kernel |
+| Cursor | Planner/Worker/Judge | 复用现有多角色编排 + DataAnalyst 角色 |
+| Devin | 自愈循环 | 失败重试 + 动态重规划 |
+| Databricks Assistant | Schema + 人工参与 | Schema 注入 + 审批门控 |
+| Replit Agent | 有状态/无状态执行 | 会话级 Kernel 管理 |
+
+**新增能力架构**
+
+```
+DataAnalysisPanel(React)
+  -> /api/v1/data/upload
+  -> /api/v1/data/analyze (SSE)
+  -> /api/v1/data/execute
+  -> /api/v1/data/auto-eda (SSE)
+  -> /api/v1/data/datasets
+
+FastAPI Data Router
+  -> DataService: 文件摄入 / Schema发现 / 统计摘要
+  -> PythonKernelService: 会话级有状态执行
+  -> DataAgentRunner: LLM + Tool 编排
+  -> DataTools: execute_python / analyze_dataset / generate_chart / query_data
+```
+
+**新增后端文件**
+- `backend/app/services/data_service.py`：数据摄入、字段剖析、统计摘要、样本提取
+- `backend/app/services/python_kernel_service.py`：有状态 Python 子进程内核与会话管理
+- `backend/app/services/data_agent_service.py`：Data Agent 编排与 Auto EDA 流水线
+- `backend/app/tools/data_tools.py`：4 个 Data Tool
+- `backend/app/api/data_routes.py`：数据上传、查询、分析、执行、自动 EDA 接口
+- `sql/migrations/20260305_data_agent_tables.sql`：`datasets` / `dataset_columns` / `data_analysis_runs` 三张表
+
+**新增前端文件**
+- `frontend/src/components/DataAnalysisPanel.tsx`：数据分析主界面（上传、对话、图表、代码执行）
+- `frontend/src/components/DataUploadPanel.tsx`：拖拽上传
+- `frontend/src/components/DatasetExplorer.tsx`：Schema/样本/统计查看
+- `frontend/src/components/CodeCell.tsx`：Jupyter 风格代码单元执行
+- `frontend/src/components/ChartViewer.tsx`：Base64 图表渲染
+
+**差异化能力**
+1. 有状态 Python 内核：变量和 DataFrame 在同一 session 内可复用
+2. 自动 Schema 注入：上传后自动发现字段类型、缺失、统计量并注入 LLM 上下文
+3. Auto EDA 流水线：一键执行数据加载、缺失分析、统计、分布、相关性分析
+4. 图表流式回传：执行中捕获 matplotlib 图像并通过 SSE 推送前端
+5. 安全沙箱：限制危险调用与执行超时，降低代码执行风险
+6. 多租户隔离：dataset 绑定 `tenant_id + session_id`，与现有权限体系一致
+7. 编排复用：DataAgentRunner 继承 AgentRunner，复用既有 streaming + tool-use 基建
+
 ---
 
 ## API 设计
@@ -418,6 +476,18 @@ destroy_workspace(session_id)
 | `/auth/tenant/invitations/accept` | POST | 接受邀请 |
 | `/sessions` | POST | 创建 Session |
 | `/health` | GET | 健康检查 |
+
+**数据分析**
+
+| 端点 | 方法 | 说明 |
+|-----|------|------|
+| `/data/upload` | POST | 上传 CSV/Excel/JSON/Parquet 并自动建模 |
+| `/data/datasets` | GET | 列出数据集（支持按 session 过滤） |
+| `/data/datasets/{dataset_id}` | GET | 查询数据集详情（Schema/样本/统计） |
+| `/data/datasets/{dataset_id}` | DELETE | 删除数据集与关联文件 |
+| `/data/execute` | POST | 在有状态 Python Kernel 直接执行代码 |
+| `/data/analyze` | POST | Data Agent 流式分析（SSE） |
+| `/data/auto-eda` | POST | 自动 EDA 流水线（SSE） |
 
 ---
 
@@ -535,6 +605,7 @@ npm run dev
 mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/init_oceanbase.sql
 mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260303_auth_tenant_isolation.sql
 mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260303_auth_tenant_invitations.sql
+mysql -h127.0.0.1 -P2881 -uroot@test -p < sql/migrations/20260305_data_agent_tables.sql
 
 # 4.（可选）构建项目索引以增强 RAG
 python3 scripts/build_context.py --workspace . --repo codingAgent --branch main

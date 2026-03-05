@@ -8,6 +8,9 @@ export interface StreamEvent {
     | 'tool_result'
     | 'diff_preview'
     | 'approval_required'
+    | 'figures'
+    | 'eda_code'
+    | 'eda_result'
     | 'error'
     | 'done'
   data: Record<string, unknown>
@@ -107,4 +110,65 @@ export interface TenantInvitationAcceptResponse {
   token_type: 'bearer'
   expires_at: string
   tenant: AuthTenantInfo
+}
+
+// ---------------------------------------------------------------------------
+// Data Agent types
+// ---------------------------------------------------------------------------
+
+export interface DatasetColumnInfo {
+  name: string
+  dtype: string
+  nullable: boolean
+  unique_count: number
+  null_count: number
+  min_value?: string | null
+  max_value?: string | null
+  mean_value?: string | null
+  sample_values: string[]
+}
+
+export interface DatasetUploadResponse {
+  dataset_id: string
+  name: string
+  file_type: string
+  file_size_bytes: number
+  row_count: number
+  column_count: number
+  columns: DatasetColumnInfo[]
+  status: string
+}
+
+export interface DatasetListItem {
+  dataset_id: string
+  name: string
+  file_type: string
+  row_count: number
+  column_count: number
+  file_size_bytes: number
+  status: string
+  created_at: string
+}
+
+export interface DatasetDetailResponse {
+  dataset_id: string
+  name: string
+  file_type: string
+  file_size_bytes: number
+  row_count: number
+  column_count: number
+  columns: DatasetColumnInfo[]
+  summary: Record<string, unknown> | null
+  sample_rows: Record<string, unknown>[]
+  status: string
+  created_at: string
+}
+
+export interface DataExecuteResponse {
+  success: boolean
+  stdout: string
+  stderr: string
+  display?: string | null
+  figures: Array<{ data_base64: string; format: string }>
+  execution_time_ms: number
 }

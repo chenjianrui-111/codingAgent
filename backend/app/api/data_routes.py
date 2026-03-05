@@ -403,7 +403,8 @@ async def auto_eda(
                 file_type=dataset.file_type,
             ):
                 # Emit step status
-                yield f"data: {StreamEvent('status', {'message': f'Running: {step_result[\"description\"]}'}).to_json()}\n\n"
+                status_message = f"Running: {step_result['description']}"
+                yield f"data: {StreamEvent('status', {'message': status_message}).to_json()}\n\n"
 
                 # Emit code
                 yield f"data: {StreamEvent('eda_code', {'step': step_result['step'], 'code': step_result['code']}).to_json()}\n\n"

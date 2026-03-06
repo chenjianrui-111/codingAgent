@@ -4,6 +4,9 @@
 
 ##项目效果
 <img width="1520" height="1025" alt="image" src="https://github.com/user-attachments/assets/d60d2400-088d-4a46-a98f-ce01aa00b6e4" />
+<img width="3790" height="1976" alt="image" src="https://github.com/user-attachments/assets/a590c7f6-f9c3-4438-9736-69789c9b5a78" />
+<img width="3790" height="1976" alt="image" src="https://github.com/user-attachments/assets/04edfabd-42a6-4a3e-822e-55dda1bdf937" />
+
 
 
 ## 架构总览

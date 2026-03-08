@@ -441,9 +441,115 @@ FastAPI Data Router
 
 ---
 
+### 12. Agent 互操作层：Skill 抽象 + MCP + Agent Gateway
+
+> `backend/app/skills/` + `backend/app/mcp/` + `backend/app/api/agent_gateway.py` + `sdk/`
+
+面向 Agent 时代设计的互操作层——将内部工具能力抽象为 **Skill**，通过 MCP 协议和 Agent Gateway REST API 让外部 AI Agent 能发现、理解并调用 dataToAi 的数据分析能力。
+
+**三层架构**
+
+```
+外部 Agent / Claude Desktop / Cursor / 自研 Agent
+          |                    |                |
+    Agent Gateway         MCP Server       Python SDK
+    (REST + SSE)          (Streamable HTTP)   (pip install)
+          |                    |                |
+          +--------------------+----------------+
+                               |
+                       Skill Registry
+                    (7 个 Skill，机器可读元数据)
+                               |
+                    BaseTool + Services
+                    (现有内部工具层，不变)
+```
+
+**Skill 抽象层** (`backend/app/skills/`)
+
+在 `BaseTool` 之上包装 `Skill` 层，增加版本、分类、输入/输出 JSON Schema、使用示例：
+
+| Skill ID | 类别 | 功能 |
+|----------|------|------|
+| `data.upload` | data | 上传并自动 profiling 数据集 |
+| `data.analyze` | data | 自然语言数据分析（流式） |
+| `data.visualize` | data | 生成 matplotlib/seaborn 图表 |
+| `data.auto_eda` | data | 一键自动 EDA 流水线（流式） |
+| `data.query` | data | 执行 pandas 表达式查询 |
+| `code.execute` | code | 有状态 Python 内核执行 |
+| `code.search_codebase` | rag | RAG 语义代码搜索 |
+
+每个 Skill 提供 `SkillManifest`：
+```python
+SkillManifest(
+    skill_id="data.analyze",
+    version="1.0.0",
+    input_schema={...},          # JSON Schema
+    output_schema={...},         # JSON Schema
+    examples=[SkillExample(...)], # 具体输入/输出示例
+    prerequisites=["data.upload"],
+    is_streaming=True,
+    tags=["analysis", "nlq", "charts"],
+)
+```
+
+**Agent Gateway** (`/agent-api/v1/`)
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/.well-known/agent.json` | GET | Agent 能力发现清单 |
+| `/skills` | GET | 列出所有 Skill（支持分类过滤） |
+| `/skills/{skill_id}` | GET | Skill 详细信息 + 调用示例 |
+| `/skills/{skill_id}/invoke` | POST | 同步调用 Skill |
+| `/skills/{skill_id}/stream` | POST | SSE 流式调用 |
+| `/sessions` | POST | 创建 Agent 会话 |
+| `/datasets` | GET | 列出数据集 |
+| `/datasets/{dataset_id}` | GET | 数据集详情 |
+
+**MCP Server** (`/mcp`)
+
+- 基于 Anthropic 官方 `mcp` SDK，使用 Streamable HTTP 传输
+- 每个 Skill 自动注册为 MCP Tool
+- 数据集暴露为 MCP Resource（`dataset://{id}`）
+- 内置 Prompt 模板（`analyze-dataset`、`quick-eda`）
+- Claude Desktop / Cursor 等 MCP 客户端可直接接入
+
+**API Key 认证（M2M）**
+
+- 新增 `ApiKeyEntity` 表，支持带 scope 的长效 API Key
+- 格式：`Authorization: ApiKey ak_...`
+- 与现有 Bearer Token 共存，自动识别认证类型
+- scope 控制可调用的 Skill 范围（如 `["data.*", "code.execute"]`）
+
+**Python SDK** (`sdk/datatoai/`)
+
+```python
+from datatoai import DataToAiClient
+
+async with DataToAiClient("http://localhost:8080", api_key="ak_...") as client:
+    # 发现能力
+    manifest = await client.discover()
+
+    # 创建会话 + 调用 Skill
+    session_id = await client.create_session()
+    result = await client.invoke("code.execute", {"code": "print(42)"}, session_id=session_id)
+
+    # 流式调用
+    async for event in client.stream("data.analyze", {"dataset_id": "d1", "query": "趋势分析"}, session_id=session_id):
+        print(event)
+```
+
+**设计原则**
+1. **向后兼容** — 现有 `/api/v1/*` 端点不变
+2. **包装而非替换** — Skill 包装 BaseTool，内部工具代码不修改
+3. **多传输协议** — 同一 Skill 可通过 REST、SSE、MCP 三种方式调用
+4. **安全** — API Key 有 scope 限制，防止未授权 Agent 执行危险操作
+5. **可发现** — `/.well-known/agent.json` 遵循 Agent 发现约定
+
+---
+
 ## API 设计
 
-> `backend/app/api/routes.py` — 19+ REST 端点 + SSE + WebSocket
+> `backend/app/api/routes.py` + `agent_gateway.py` — 27+ REST 端点 + SSE + WebSocket + MCP
 
 **Agent 执行**
 
@@ -492,6 +598,20 @@ FastAPI Data Router
 | `/data/analyze` | POST | Data Agent 流式分析（SSE） |
 | `/data/auto-eda` | POST | 自动 EDA 流水线（SSE） |
 
+**Agent Gateway（Agent 互操作）**
+
+| 端点 | 方法 | 说明 |
+|-----|------|------|
+| `/agent-api/v1/.well-known/agent.json` | GET | Agent 能力发现清单 |
+| `/agent-api/v1/skills` | GET | 列出所有 Skill |
+| `/agent-api/v1/skills/{skill_id}` | GET | Skill 详情 + 调用示例 |
+| `/agent-api/v1/skills/{skill_id}/invoke` | POST | 同步调用 Skill |
+| `/agent-api/v1/skills/{skill_id}/stream` | POST | SSE 流式调用 Skill |
+| `/agent-api/v1/sessions` | POST | 创建 Agent 会话 |
+| `/agent-api/v1/datasets` | GET | 列出数据集（Agent 友好格式） |
+| `/agent-api/v1/datasets/{dataset_id}` | GET | 数据集结构化信息 |
+| `/mcp` | MCP | MCP Streamable HTTP 端点 |
+
 ---
 
 ## 数据层（20+ 张表）
@@ -504,6 +624,7 @@ tenants -> tenant_members (角色)
 tenants -> tenant_invitations (邀请码、状态、过期时间)
 users -> google_identities (google_sub)
 auth_tokens (user_id, tenant_id, expires_at, revoked)
+api_keys (api_key_hash, tenant_id, scopes_json, M2M 认证)
 sessions (tenant_id, owner_user_id)
 ```
 
@@ -552,6 +673,7 @@ audit_events (操作者、动作、实体追踪)
 | LLM | Anthropic Claude API（Streaming Tool-Use） |
 | 数据库 | OceanBase (MySQL 模式) / SQLite 降级兜底 |
 | 实时通信 | Server-Sent Events (SSE) + WebSocket |
+| Agent 互操作 | MCP (Model Context Protocol)、Agent Gateway REST/SSE、Python SDK |
 | IDE | VS Code Extension (TypeScript) |
 | 多模态 | Tesseract OCR、Whisper ASR |
 
@@ -568,6 +690,8 @@ codingAgent/
       repositories/  # 数据访问层（Repository 模式）
       services/      # Agent、LLM、Memory、RAG、Context、Sandbox、Multimodal
       tools/         # 文件操作、Shell、Git、RAG（12 个内置工具）
+      skills/        # Skill 抽象层（7 个 Skill + Registry）
+      mcp/           # MCP Server（Tool + Resource + Prompt）
       models.py      # SQLAlchemy ORM（20+ 实体）
       db.py          # 同步 + 异步引擎，自动降级
       main.py        # FastAPI 应用（CORS + 静态文件）
@@ -578,6 +702,7 @@ codingAgent/
       components/    # ChatPanel、ToolCallCard、DiffPreview、ApprovalDialog
       hooks/         # useAgentStream、useSession
       stores/        # Zustand 状态管理
+  sdk/               # Python SDK（pip install datatoai）
   extension/         # VS Code 插件
   scripts/           # 离线索引管道
   sql/               # OceanBase Schema + Migration

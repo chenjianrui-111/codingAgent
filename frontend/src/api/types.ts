@@ -169,6 +169,6 @@ export interface DataExecuteResponse {
   stdout: string
   stderr: string
   display?: string | null
-  figures: Array<{ data_base64: string; format: string }>
+  figures: Array<{ data_base64?: string; url?: string; format: string }>
   execution_time_ms: number
 }

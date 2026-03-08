@@ -262,6 +262,8 @@ class KernelManager:
 
     def __init__(self):
         self._kernels: dict[str, PythonKernel] = {}
+        self._figures_root = Path(settings.sandbox_workspace_root) / "figures"
+        self._figures_root.mkdir(parents=True, exist_ok=True)
 
     async def get_or_create(self, session_id: str, dataset_dir: str | None = None) -> PythonKernel:
         """Get an existing kernel for the session, or create a new one."""
@@ -274,7 +276,35 @@ class KernelManager:
     async def execute(self, session_id: str, code: str, dataset_dir: str | None = None) -> ExecutionResult:
         """Execute code in the session's kernel."""
         kernel = await self.get_or_create(session_id, dataset_dir=dataset_dir)
-        return await kernel.execute(code)
+        result = await kernel.execute(code)
+        # Convert inline base64 figures to disk-backed URLs
+        if result.figures:
+            result.figures = self._save_figures(session_id, result.figures)
+        return result
+
+    def _save_figures(self, session_id: str, figures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Save base64-encoded figures to disk and replace with URL references."""
+        session_dir = self._figures_root / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        converted = []
+        for fig in figures:
+            b64 = fig.get("data_base64")
+            if not b64:
+                converted.append(fig)
+                continue
+            try:
+                png_bytes = base64.b64decode(b64)
+                filename = f"{uuid.uuid4().hex}.png"
+                filepath = session_dir / filename
+                filepath.write_bytes(png_bytes)
+                converted.append({
+                    "url": f"/api/v1/data/figures/{session_id}/{filename}",
+                    "format": fig.get("format", "png"),
+                })
+            except Exception:
+                logger.warning("Failed to save figure to disk, keeping base64")
+                converted.append(fig)
+        return converted
 
     async def shutdown_session(self, session_id: str) -> None:
         """Shut down the kernel for a specific session."""

@@ -17,7 +17,7 @@ interface AnalysisMessage {
   type: 'user' | 'assistant' | 'code' | 'chart' | 'status' | 'error'
   content: string
   code?: string
-  figures?: Array<{ data_base64: string; format: string }>
+  figures?: Array<{ data_base64?: string; url?: string; format: string }>
 }
 
 export default function DataAnalysisPanel({ sessionId, accessToken, onBack }: Props) {
@@ -117,6 +117,14 @@ export default function DataAnalysisPanel({ sessionId, accessToken, onBack }: Pr
                   content: '',
                   figures: edaData.figures as Array<{ data_base64: string; format: string }>,
                 })
+              }
+              break
+            }
+            case 'figures': {
+              const figData = event.data as Record<string, unknown>
+              const figs = figData.figures as Array<{ data_base64?: string; url?: string; format: string }>
+              if (figs && figs.length > 0) {
+                addMessage({ type: 'chart', content: '', figures: figs })
               }
               break
             }

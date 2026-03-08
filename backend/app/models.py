@@ -403,6 +403,25 @@ class AgentFileChangeEntity(Base):
 # ---------------------------------------------------------------------------
 
 
+class ApiKeyEntity(Base):
+    """Long-lived API key for machine-to-machine (agent-to-agent) authentication."""
+
+    __tablename__ = "api_keys"
+
+    key_id: Mapped[str] = mapped_column(String(64), primary_key=True, default=lambda: str(uuid.uuid4()))
+    api_key_hash: Mapped[str] = mapped_column(String(256), nullable=False, unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.tenant_id"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.user_id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    scopes_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # JSON: ["data.*", "code.execute"]
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    tenant: Mapped[TenantEntity] = relationship()
+    user: Mapped[UserEntity] = relationship()
+
+
 class DatasetEntity(Base):
     """An uploaded or connected dataset available for analysis."""
 

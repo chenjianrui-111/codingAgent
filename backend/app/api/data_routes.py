@@ -12,8 +12,10 @@ from __future__ import annotations
 import json
 import logging
 
+from pathlib import Path
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_auth_context_optional
@@ -263,6 +265,34 @@ def delete_dataset(
     db.commit()
 
     return {"status": "deleted", "dataset_id": dataset_id}
+
+
+# ---------------------------------------------------------------------------
+# Serve saved figure images
+# ---------------------------------------------------------------------------
+@data_router.get("/figures/{session_id}/{filename}")
+async def get_figure(session_id: str, filename: str):
+    """Serve a saved chart figure image."""
+    from app.core.config import settings as _settings
+
+    # Validate filename to prevent directory traversal
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="invalid filename")
+    if not filename.endswith(".png"):
+        raise HTTPException(status_code=400, detail="only PNG files supported")
+
+    fig_path = Path(_settings.sandbox_workspace_root) / "figures" / session_id / filename
+    fig_path = fig_path.resolve()
+
+    # Ensure the resolved path is within the figures directory
+    figures_root = (Path(_settings.sandbox_workspace_root) / "figures").resolve()
+    if not str(fig_path).startswith(str(figures_root)):
+        raise HTTPException(status_code=403, detail="access denied")
+
+    if not fig_path.exists():
+        raise HTTPException(status_code=404, detail="figure not found")
+
+    return FileResponse(fig_path, media_type="image/png")
 
 
 # ---------------------------------------------------------------------------

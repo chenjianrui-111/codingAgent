@@ -9,8 +9,10 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
+import hashlib
+
 from app.core.config import settings
-from app.models import TenantEntity, TenantInvitationEntity, TenantMemberEntity, UserEntity
+from app.models import ApiKeyEntity, TenantEntity, TenantInvitationEntity, TenantMemberEntity, UserEntity
 from app.repositories.agent_repo import AgentRepository
 
 
@@ -384,6 +386,65 @@ class AuthService:
 
     def _generate_invite_code(self) -> str:
         return "inv_" + secrets.token_urlsafe(24)
+
+    # ------------------------------------------------------------------
+    # API Key management (machine-to-machine auth)
+    # ------------------------------------------------------------------
+
+    def create_api_key(
+        self,
+        tenant_id: str,
+        user_id: str,
+        name: str,
+        scopes: list[str] | None = None,
+        expires_in_days: int | None = None,
+    ) -> str:
+        """Create a long-lived API key for agent-to-agent authentication.
+
+        Returns the raw API key (``ak_...``). The key hash is stored in DB.
+        """
+        raw_key = "ak_" + secrets.token_urlsafe(48)
+        key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
+
+        expires_at = None
+        if expires_in_days:
+            expires_at = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(days=expires_in_days)
+
+        entity = ApiKeyEntity(
+            api_key_hash=key_hash,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            name=name,
+            scopes_json=json.dumps(scopes or []),
+            status="active",
+            expires_at=expires_at,
+        )
+        self.repo.db.add(entity)
+        self.repo.db.flush()
+        return raw_key
+
+    def validate_api_key(self, api_key: str) -> AuthContext | None:
+        """Validate an API key and return an AuthContext if valid."""
+        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+        entity = (
+            self.repo.db.query(ApiKeyEntity)
+            .filter(ApiKeyEntity.api_key_hash == key_hash, ApiKeyEntity.status == "active")
+            .first()
+        )
+        if not entity:
+            return None
+
+        if entity.expires_at:
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if entity.expires_at <= now:
+                return None
+
+        return AuthContext(
+            user_id=entity.user_id,
+            tenant_id=entity.tenant_id,
+            role="member",
+            email=None,
+        )
 
     # ------------------------------------------------------------------
     # Dev token bootstrap

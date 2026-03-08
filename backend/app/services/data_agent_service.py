@@ -9,15 +9,13 @@ Extends the existing AgentRunner with data-specific capabilities:
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import Any, AsyncIterator
+from typing import AsyncIterator
 
 from app.core.config import settings
 from app.services.llm_service import LLMService
 from app.services.agent_runner import AgentRunner, StreamEvent
-from app.services.data_service import DataService
-from app.tools.base import ToolContext, ToolRegistry
+from app.tools.base import ToolRegistry
 from app.tools.data_tools import (
     AnalyzeDatasetTool,
     ExecutePythonTool,
@@ -130,12 +128,6 @@ class DataAgentRunner(AgentRunner):
         - Figure streaming events for chart visualization
         """
         workspace = workspace or settings.sandbox_workspace_root
-
-        # Pre-load dataset into kernel
-        init_code = None
-        if dataset_context:
-            # The dataset context will be injected into the system prompt
-            pass
 
         async for event in self.run_stream(
             session_id=session_id,
@@ -319,6 +311,8 @@ else:
 
             code = code.replace("{file_type}", read_func)
             code = code.replace("{file_path}", file_path)
+            # Unescape double braces used to protect Python f-strings/dicts in templates
+            code = code.replace("{{", "{").replace("}}", "}")
 
             result = await self.kernel_manager.execute(session_id, code)
 

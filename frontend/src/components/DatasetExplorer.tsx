@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DatasetDetailResponse, DatasetListItem } from '../api/types'
-import { getDatasetDetail, listDatasets, deleteDataset } from '../api/client'
+import { getDatasetDetail, listDatasets } from '../api/client'
 
 interface Props {
   sessionId: string

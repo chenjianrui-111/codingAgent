@@ -1,5 +1,6 @@
 interface Figure {
-  data_base64: string
+  data_base64?: string
+  url?: string
   format: string
   figure_num?: number
 }
@@ -7,6 +8,12 @@ interface Figure {
 interface Props {
   figures: Figure[]
   title?: string
+}
+
+function figureSrc(fig: Figure): string {
+  if (fig.url) return fig.url
+  if (fig.data_base64) return `data:image/${fig.format || 'png'};base64,${fig.data_base64}`
+  return ''
 }
 
 export default function ChartViewer({ figures, title }: Props) {
@@ -21,7 +28,7 @@ export default function ChartViewer({ figures, title }: Props) {
           className="bg-white rounded-lg overflow-hidden shadow-lg border border-gray-700"
         >
           <img
-            src={`data:image/${fig.format || 'png'};base64,${fig.data_base64}`}
+            src={figureSrc(fig)}
             alt={`Chart ${i + 1}`}
             className="w-full h-auto"
           />
